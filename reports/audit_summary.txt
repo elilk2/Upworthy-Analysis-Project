@@ -1,0 +1,5 @@
+Bootstrap audit summary -- 1150 eligible experiments
+(experiments with exactly one declared winner; anomaly tests excluded)
+Does not hold up (not statistically significant): 1024 (89.0% ) 
+Holds up (winner significantly beats runner-up): 115 (10.0% ) 
+Red flag (winner significantly worse than runner-up): 11 (1.0% ) 
