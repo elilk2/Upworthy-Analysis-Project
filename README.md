@@ -1,31 +1,98 @@
-# 🧪 Upworthy A/B Test Re-Evaluator: Non-Parametric Bootstrapping Engine
+Upworthy A/B Test Re-Evaluator: Non-Parametric Bootstrapping Engine
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
-[![Streamlit App](https://static.streamlit.io/badge_svg/build.svg)](https://your-app-url.streamlit.app)
+[![Streamlit App](https://static.streamlit.io/badge_svg/build.svg)](https://upworthy-analysis-project-qfdmcjhrce3p6cuoqrzpe5.streamlit.app/)
 
-## Executive Summary
-Digital publishers frequently make high-stakes editorial decisions based on A/B testing frameworks that rely on standard parametric assumptions (e.g., asymptotic Z-tests). This project builds a non-parametric bootstrapping experimentation engine in Python and SQL, re-evaluating 22,666 headline/teaser package variations across 4,873 A/B tests from the Upworthy Research Archive.
+## Findings
+
+**85% of Upworthy's high-confidence A/B test winners weren't statistically distinguishable from the alternative headline they beat out.**
+
+Upworthy made editorial decisions from A/B tests, trusting their winenr flags without checking if they would hold up under closer statistical scrutiny. 
+This project independently re-evaluates 1,150 historical Upworthy headline experiments using Non-Parametric BCa bootstrap resampling, compariong each
+declared winner against its strongest runner-up test
 
 ## Key Findings
-* **False Positive Identification:** Non-parametric bootstrapping revealed that X% of headline variations flagged as "winners" under standard Z-tests had 95% confidence intervals that spanned across zero, indicating insufficient statistical evidence.
-* **Skewness Mitigation:** BCa (Bias-Corrected and Accelerated) resampling properly adjusted interval bounds for low-CTR headline variations where standard asymptotic errors under-represented variance.
+
+| Verdict | Count | % |
+| --- | --- | --- |
+| Does not hold up (bootstrap CI includes zero) | 1024 | 89.0% |
+| Holds up (winner significantly beats runner-up) | 115 | 10.0% |
+| Red Flag Winner (winner significantly worse than runner-up | 11 | 1.0% |
+
+Of the 1024 winners that didn't hold up, 85% of them had significance scores of 100, the maximum confidence score.
+
+** One example:** One test declared **Split-Screen Look At Growing Up Rich Vs. Growing Up Poor**, a winner with a significance score of 0.0, a very unconfident winner.
+Independent bootstrapping resampling confirmed that the winner actually underperformed against the alternative by a statistically significant margin (2.6% CTR vs 4.9% CTR, 95% CI completely negative)                                 
+
+## How This Works
+
+- **Comparison basis:** Each declared winner is tested against its single strongest competing variant (highest observed CTR among the non-winners) rather than being against a pooled average
+- **Denominator:** 1,150 of the dataset's 4,873 total experiments. The remaining 3,723 either had 0 or multiple declared winners and were excluded as ambigious rather than guessed at./
+- **Method:** BCa (bias-corrected and accelerated) bootstrap, via `scipy.stats.bootstrap`, is appropirate here because of click-through rate's bounded [0,1] proportion 
+rather than a normal distributed quantity that a standard parametric test would assume
+- **Resample Count:** 2,000 resamples for the full 1,150 experiment audit (a performance trade-off that is verified to not change conclusions);
+10,000 resamples for the single-experiment interactive view on Streamlit app, where only one experiment is computed at a time
+
+Live App: https://upworthy-analysis-project-qfdmcjhrce3p6cuoqrzpe5.streamlit.app/
 
 ## Tech Stack
-* **Language:** Python 3.10+
-* **Database & Data Pipeline:** SQLite, Pandas, NumPy
-* **Statistical Methods:** Non-Parametric Binomial Bootstrapping, BCa Confidence Intervals, Parametric Z-Testing
-* **Visualization & Frontend:** Streamlit, Plotly, Seaborn
-* **Testing & Quality:** Pytest, Flake8
+* **Language:** Python 3.10+ 
+* **Data Pipeline:** SQLite, Pandas, NumPy, BeautifulSoup4 (HTML cleaning)
+* **Statistics:** SciPy ('scipy.stats.boostrap', BCa method), non-parametric binomial boostrap resampling
+* **Testing:** Pytest
 
-## Architecture & Workflow
-1. **ETL & SQL Storage:** Raw experiment logs are normalized into an indexed SQLite database.
-2. **Resampling Engine:** Vectorized NumPy implementation resamples B=10,000 iterations to generate empirical difference distributions.
-3. **Interactive Dashboard:** Deployed Streamlit web application enabling real-time scenario modeling and custom experiment analysis.
+## Architecture and Workflow
 
-## How to Run Locally
+1. **ETL and SQL storage** (`src/etl.py`) - raw experiment logs are cleaned
+   (HTML stripped, blank strings normalized to NULL) and loaded into a indexed SQLite database ('database/schema.sql') 
+2. **Resampling Engine** (`src/bootstrap_engine.py`) - a vectorized NumPy + SciPy implementation 
+computes a BCa bootstrap confidence interval on the CTR difference between a winner and its strongest competing variant
+3. **Audit Pipeline** (`src/audit_pipeline.py`) - runs the engine across all 1,150 eligible experiments, persists results to the database, and is resumable (safe to interrupt and re-run)
+4. **Interactive Dashboard** (`app.py`) - A Streamlit app for browsing individual experiment results, filterable by verdict.
+
+## Reproducing This Analysis
+
 ```bash
-git clone [https://github.com/yourusername/upworthy-bootstrap-engine.git](https://github.com/yourusername/upworthy-bootstrap-engine.git)
-cd upworthy-bootstrap-engine
+git clone https://github.com/<your-username>/upworthy_analysis_project.git
+cd upworthy_analysis_project
+
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS / Linux
+
 pip install -r requirements.txt
-python src/etl.py
-streamlit run app.py
+
+python src/etl.py             # build the database
+python src/audit_pipeline.py  # run the full bootstrap audit (~10-15 min)
+streamlit run app.py          # launch the dashboard
+```
+
+## Project Structure
+
+```
+upworthy_analysis_project/
+├── data/processed/          # cleaned input data
+├── database/
+│   ├── schema.sql           # table + view definitions
+│   └── upworthy.db          # generated by etl.py
+├── src/
+│   ├── etl.py                # extract, clean, load
+│   ├── bootstrap_engine.py   # BCa bootstrap core
+│   └── audit_pipeline.py     # runs the engine across all experiments
+├── tests/
+│   └── test_etl.py
+├── reports/
+│   └── audit_summary.txt     # generated by audit_pipeline.py
+├── app.py                    # Streamlit dashboard
+└── requirements.txt
+
+# Data and Limitations 
+- **Source** [Upworthy Research Archive](https://osf.io/jd64p/) — 22,666
+  headline/package variants across 4,873 A/B tests.
+- The dataset's `significance` column is **not a p-value** but rather a bucketed 0-100 score of undocumented origin, heavily concentrated at the extremes (0 and 100). 
+  This ambiguity is a large motivation for the independent, more transparent re-analysis.
+- 3,723 experiments were excluded from the audit entirely rather than assigning a guessed winner
+- Bootstraps resampling estimates uncertainty from the observed sample; it does not correct for other possible issues in the original experiment which are outside the scope of the analysis
+
+## Deployment
+https://upworthy-analysis-project-qfdmcjhrce3p6cuoqrzpe5.streamlit.app/
