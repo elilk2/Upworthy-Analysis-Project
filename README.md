@@ -86,7 +86,7 @@ upworthy_analysis_project/
 ├── app.py                    # Streamlit dashboard
 └── requirements.txt
 
-# Data and Limitations 
+## Data and Limitations 
 - **Source** [Upworthy Research Archive](https://osf.io/jd64p/) — 22,666
   headline/package variants across 4,873 A/B tests.
 - The dataset's `significance` column is **not a p-value** but rather a bucketed 0-100 score of undocumented origin, heavily concentrated at the extremes (0 and 100). 
